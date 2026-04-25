@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { connectDB } from './db.js';
 import blogsRouter from './routes/blogs.js';
+import productivityRouter from './routes/productivity.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -18,6 +19,7 @@ app.use('/api', (req, res, next) => {
 });
 
 app.use('/api/blogs', blogsRouter);
+app.use('/api/v1/productivity', productivityRouter);
 
 app.get('/health', (req, res) => {
   res.json({ ok: true });
