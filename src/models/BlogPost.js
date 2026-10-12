@@ -15,6 +15,8 @@ const blogPostSchema = new mongoose.Schema(
     content: { type: String, default: '' },
     coverImage: { type: String },
     tags: [{ type: String }],
+    status: { type: String, enum: ['draft', 'published'], default: 'published', index: true },
+    readingTime: { type: Number, default: 1 },
     likes: { type: Number, default: 0 },
     readCount: { type: Number, default: 0 },
     comments: [commentSchema],
