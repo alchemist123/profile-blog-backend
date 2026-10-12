@@ -4,7 +4,10 @@ import cors from 'cors';
 import { connectDB } from './db.js';
 import blogsRouter from './routes/blogs.js';
 import productivityRouter from './routes/productivity.js';
+import mediaRouter from './routes/media.js';
+import vlogsRouter from './routes/vlogs.js';
 import { authRouter, requireAdmin } from './auth.js';
+import { checkStorage } from './storage.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -25,6 +28,8 @@ app.use('/api', (req, res, next) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/blogs', blogsRouter);
+app.use('/api/media', mediaRouter);
+app.use('/api/vlogs', vlogsRouter);
 app.use('/api/v1/productivity', requireAdmin, productivityRouter);
 
 app.get('/health', (req, res) => {
@@ -36,6 +41,7 @@ async function start() {
     console.warn('ADMIN_PASSWORD is missing or shorter than 12 chars: admin endpoints are disabled.');
   }
   await connectDB();
+  await checkStorage();
   app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
   });
