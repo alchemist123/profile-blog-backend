@@ -4,9 +4,14 @@ import cors from 'cors';
 import { connectDB } from './db.js';
 import blogsRouter from './routes/blogs.js';
 import productivityRouter from './routes/productivity.js';
+import { authRouter, requireAdmin } from './auth.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// Real client IP behind a local/private reverse proxy (used by the login rate limiter).
+app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+app.disable('x-powered-by');
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
@@ -18,14 +23,18 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/blogs', blogsRouter);
-app.use('/api/v1/productivity', productivityRouter);
+app.use('/api/v1/productivity', requireAdmin, productivityRouter);
 
 app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
 async function start() {
+  if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 12) {
+    console.warn('ADMIN_PASSWORD is missing or shorter than 12 chars: admin endpoints are disabled.');
+  }
   await connectDB();
   app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);

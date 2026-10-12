@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { BlogPost } from '../models/BlogPost.js';
 import { ContentBlock } from '../models/ContentBlock.js';
+import { isAdmin, requireAdmin } from '../auth.js';
 
 const router = Router();
 
 const WORDS_PER_MINUTE = 220;
+const MAX_COMMENT_LENGTH = 2000;
+const MAX_NAME_LENGTH = 60;
 
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -33,13 +36,13 @@ function normalizeStatus(status) {
 
 /**
  * GET /api/blogs - list blogs (card data only, no body/comments), newest first.
- * Optional ?search= & ?tag=. Drafts are hidden unless ?includeDrafts=1.
+ * Optional ?search= & ?tag=. Drafts are only included for an admin passing ?includeDrafts=1.
  */
 router.get('/', async (req, res) => {
   try {
     const { search, tag, includeDrafts } = req.query;
     const filter = {};
-    if (includeDrafts !== '1') filter.status = { $ne: 'draft' };
+    if (!(includeDrafts === '1' && isAdmin(req))) filter.status = { $ne: 'draft' };
     if (search && String(search).trim()) {
       const term = new RegExp(escapeRegex(String(search).trim()), 'i');
       filter.$or = [{ title: term }, { summary: term }, { tags: term }];
@@ -85,8 +88,8 @@ router.get('/tags', async (req, res) => {
 /** POST /api/blogs/:id/like - increment like count (no auth) - must be before GET /:id */
 router.post('/:id/like', async (req, res) => {
   try {
-    const doc = await BlogPost.findByIdAndUpdate(
-      req.params.id,
+    const doc = await BlogPost.findOneAndUpdate(
+      { _id: req.params.id, status: { $ne: 'draft' } },
       { $inc: { likes: 1 } },
       { new: true }
     );
@@ -100,8 +103,8 @@ router.post('/:id/like', async (req, res) => {
 /** POST /api/blogs/:id/read - increment read count */
 router.post('/:id/read', async (req, res) => {
   try {
-    const doc = await BlogPost.findByIdAndUpdate(
-      req.params.id,
+    const doc = await BlogPost.findOneAndUpdate(
+      { _id: req.params.id, status: { $ne: 'draft' } },
       { $inc: { readCount: 1 } },
       { new: true }
     );
@@ -119,13 +122,16 @@ router.post('/:id/comments', async (req, res) => {
     if (!text || !String(text).trim()) {
       return res.status(400).json({ error: 'Comment text is required' });
     }
+    if (String(text).trim().length > MAX_COMMENT_LENGTH) {
+      return res.status(400).json({ error: `Comment must be at most ${MAX_COMMENT_LENGTH} characters` });
+    }
     const comment = {
-      name: name && String(name).trim() ? String(name).trim() : 'Anonymous',
+      name: name && String(name).trim() ? String(name).trim().slice(0, MAX_NAME_LENGTH) : 'Anonymous',
       text: String(text).trim(),
       createdAt: new Date(),
     };
-    const doc = await BlogPost.findByIdAndUpdate(
-      req.params.id,
+    const doc = await BlogPost.findOneAndUpdate(
+      { _id: req.params.id, status: { $ne: 'draft' } },
       { $push: { comments: comment } },
       { new: true }
     );
@@ -146,7 +152,9 @@ router.post('/:id/comments', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const doc = await BlogPost.findById(req.params.id);
-    if (!doc) return res.status(404).json({ error: 'Not found' });
+    if (!doc || (doc.status === 'draft' && !isAdmin(req))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
     const blog = doc.toJSON();
     const blockDocs = await ContentBlock.find({ blogId: doc._id }).sort({ index: 1 }).lean();
     blog.blocks = blockDocs.map((b) => ({
@@ -160,7 +168,7 @@ router.get('/:id', async (req, res) => {
 });
 
 /** POST /api/blogs - create blog (content or blocks required) */
-router.post('/', async (req, res) => {
+router.post('/', requireAdmin, async (req, res) => {
   try {
     const { title, summary, content, coverImage, tags, blocks, status } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
@@ -194,7 +202,7 @@ router.post('/', async (req, res) => {
 });
 
 /** PUT /api/blogs/:id - update blog (optional blocks replace existing) */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAdmin, async (req, res) => {
   try {
     const { title, summary, content, coverImage, tags, blocks, status } = req.body;
     const updates = {};
@@ -234,7 +242,7 @@ router.put('/:id', async (req, res) => {
 });
 
 /** DELETE /api/blogs/:id - delete blog and its content blocks */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     const doc = await BlogPost.findByIdAndDelete(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Not found' });
